@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script defer src="pokersolver.min.js"></script>
+    <script defer src="handEvaluator.js"></script>
+    <script defer src="script.js"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/pokersolver@2.1.4/pokersolver.min.js"></script> -->
+    <!-- <script defer src="https://unpkg.com/pokersolver/dist/pokersolver.min.js"></script> -->
+
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            padding: 1rem;
+            background: #f7f7f7;
+        }
+
+        .card {
+            padding: 1rem;
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .1);
+        }
+
+        button {
+            padding: .6rem .8rem;
+            border-radius: 10px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            font-size: 1rem;
+        }
+
+        button.secondary {
+            background: #e5e7eb;
+            color: #111;
+        }
+
+        button.danger {
+            background: #dc2626;
+        }
+
+        input {
+            width: 100%;
+            padding: .5rem;
+            margin-top: .25rem;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+
+        .row {
+            display: flex;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+
+        .card-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            background: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .card-btn.disabled {
+            opacity: .3;
+            pointer-events: none;
+        }
+
+        .card-btn.selected {
+            background: #fde68a;
+            outline: 2px solid #f59e0b;
+            outline-offset: 0;
+        }
+
+        /* Player card grid layout */
+        .player-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr 260px;
+            gap: .75rem;
+            align-items: center;
+        }
+
+        /*.player-left { display:flex; align-items:center; }*/
+        .player-left { display:flex; flex-direction:column; min-width:0; }
+        .player-center { display:flex; align-items:center; gap:.5rem; min-width:0; }
+        .player-right { display:flex; flex-direction:column; gap:.5rem; align-items:flex-end; min-width:0; }
+
+        .bets-row { display:flex; gap:.5rem; }
+        .bets-row > div { flex: 1; min-width:0; }
+        .player-name, .bet-input { min-width:0; box-sizing: border-box; }
+
+        .bet-input { width:100%; max-width:160px; }
+        .player-name { width:100%; }
+
+        @media (max-width:640px) {
+            .player-grid { grid-template-columns: 1fr; }
+            .player-right { align-items:stretch; }
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 1rem;
+            border-radius: 12px;
+            max-width: 420px;
+            max-height: 80vh;
+            overflow: auto;
+        }
+        button[disabled] { opacity: .5; pointer-events: none; }
+        .card.incomplete { border: 2px solid #dc2626; }
+            .actions { display:flex; gap:.5rem; flex-wrap:wrap; align-items:stretch; }
+            .actions > button { flex: 1 1 140px; min-width:120px; }
+            /* Animations */
+            .animate-fade-in { animation: fadeIn .28s ease both; }
+            .animate-slide-up { animation: slideUp .32s cubic-bezier(.2,.9,.3,1) both; }
+
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(6px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+
+            @keyframes slideUp {
+                from { opacity: 0; transform: translateY(10px) scale(.995); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+
+            .card { transition: transform .18s ease, box-shadow .18s ease; }
+            .card:hover { transform: translateY(-4px); box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+
+            .card-btn { transition: background .12s ease, transform .12s ease; }
+            .card-btn:hover { transform: translateY(-2px); }
+            /* Card face: rank + suit laid out horizontally */
+            .card-btn { position: relative; padding: .25rem; }
+            .card-face { display:flex; flex-direction:row; align-items:center; gap:6px; line-height:1; }
+            .card-face .rank { font-weight:700; font-size:15px; }
+            .card-face .suit { font-size:17px; margin-top:0; }
+            .card-placeholder { font-weight:700; font-size:18px; }
+            .red-suit { color: #dc2626; }
+            .black-suit { color: #111827; }
+            .modal-footer { position: sticky; bottom: 0; background: white; padding-top: .5rem; display:flex; gap:.5rem; justify-content:flex-end; border-top:1px solid rgba(0,0,0,0.06); padding-bottom:.25rem; }
+            /* Deck grid for modal: rows = ranks, columns = suits */
+            .deck-grid { display: grid; grid-template-columns: repeat(4, 48px); gap: .4rem; align-items: center; }
+            .deck-row-label { font-size:12px; color:#666; width:36px; text-align:right; margin-right:.5rem }
+    </style>
+</head>
+
+<body x-data="pokerInputApp()">
+
+    <!-- PLAYERS -->
+    <h2>Players</h2>
+
+    <template x-for="(player, index) in players" :key="player.id">
+        <div class="card animate-fade-in">
+            <div class="card" :class="{ incomplete: !isPlayerComplete(player) }">
+            <div class="player-grid">
+                <div class="player-left">
+                    <div style="display:flex; justify-content:space-between; gap:.5rem; width:100%">
+                        <input class="player-name" x-model="player.name" :placeholder="getPlayerLabel(player.id)">
+                        <button class="danger" @click="removePlayer(index)">🗑</button>
+                    </div>
+                </div>
+
+                <div class="player-center">
+                    <div style="display:flex; gap:.5rem;">
+                        <template x-for="(card, cIdx) in player.cards" :key="cIdx">
+                            <div class="card-btn" @click="openCardPicker('player', player.id, cIdx)">
+                                <template x-if="card">
+                                    <div class="card-face">
+                                        <span class="rank" :class="getSuitColorClass(card)" x-text="getCardRank(card)"></span>
+                                        <span class="suit" :class="getSuitColorClass(card)" x-html="getSuitSymbol(card)"></span>
+                                    </div>
+                                </template>
+                                <template x-if="!card">
+                                    <div class="card-placeholder">+</div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="player-right">
+                    <div class="bets-row">
+                        <div><input class="bet-input" type="number" min="0" x-model.number="player.preflop" placeholder="Preflop"></div>
+                        <div><input class="bet-input" type="number" min="0" x-model.number="player.flop" placeholder="Flop"></div>
+                        <div><input class="bet-input" type="number" min="0" x-model.number="player.turn" placeholder="Turn"></div>
+                        <div><input class="bet-input" type="number" min="0" x-model.number="player.river" placeholder="River"></div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <button @click="addPlayer()">➕ Add Player</button>
+
+    <hr>
+
+    <!-- BOARDS -->
+    <h2>Boards</h2>
+
+    <template x-for="(board, bIdx) in boards" :key="board.id">
+        <div class="card animate-fade-in" :class="{ incomplete: !isBoardComplete(board) }">
+            <div style="display:flex; align-items:center; justify-content:space-between">
+                <strong>Board <span x-text="bIdx + 1"></span></strong>
+                <button class="danger" @click="removeBoard(bIdx)">🗑</button>
+            </div>
+
+            <!-- Board cards: flop + turn + river in one row -->
+            <div class="row" style="margin-top:.5rem">
+                <template x-for="(card, cIdx) in board.flop" :key="cIdx">
+                    <div class="card-btn" @click="openCardPicker('board', board.id, 'flop', cIdx)">
+                        <template x-if="card">
+                            <div class="card-face">
+                                <span class="rank" :class="getSuitColorClass(card)" x-text="getCardRank(card)"></span>
+                                <span class="suit" :class="getSuitColorClass(card)" x-html="getSuitSymbol(card)"></span>
+                            </div>
+                        </template>
+                        <template x-if="!card"><div class="card-placeholder">+</div></template>
+                    </div>
+                </template>
+
+                <div class="card-btn" @click="openCardPicker('board', board.id, 'turn')">
+                    <template x-if="board.turn">
+                        <div class="card-face">
+                            <span class="rank" :class="getSuitColorClass(board.turn)" x-text="getCardRank(board.turn)"></span>
+                            <span class="suit" :class="getSuitColorClass(board.turn)" x-html="getSuitSymbol(board.turn)"></span>
+                        </div>
+                    </template>
+                    <template x-if="!board.turn"><div class="card-placeholder">T</div></template>
+                </div>
+
+                <div class="card-btn" @click="openCardPicker('board', board.id, 'river')">
+                    <template x-if="board.river">
+                        <div class="card-face">
+                            <span class="rank" :class="getSuitColorClass(board.river)" x-text="getCardRank(board.river)"></span>
+                            <span class="suit" :class="getSuitColorClass(board.river)" x-html="getSuitSymbol(board.river)"></span>
+                        </div>
+                    </template>
+                    <template x-if="!board.river"><div class="card-placeholder">R</div></template>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <button @click="addBoard()">➕ Add Board</button>
+
+    <div class="row" style="margin-top:1rem">
+        <div class="actions" style="margin-top:.5rem;">
+            <button @click="buildPots()">🔢 Build Pots</button>
+            <button :disabled="!canEvaluate" @click="evaluateBoards()">🧠 Evaluate</button>
+            <button :disabled="!canEvaluate" @click="computePayouts()">💸 Compute Payouts</button>
+        </div>
+    </div>
+
+    <!-- Pots Display -->
+    <template x-if="pots && pots.length">
+        <div class="card" style="margin-top:.75rem">
+            <strong>Pots</strong>
+            <div class="row" style="margin-top:.5rem; flex-direction:column; gap:.5rem">
+                <template x-for="(pot, idx) in pots" :key="idx">
+                    <div class="animate-slide-up" style="padding:.5rem; background:#fff; border-radius:8px; width:100%; box-shadow:0 1px 0 rgba(0,0,0,0.03)">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-weight:600">Pot <span x-text="idx + 1"></span></div>
+                            <div style="font-weight:700">Amount: <span x-text="formatAmount(pot.amount)"></span></div>
+                        </div>
+                        <div style="margin-top:.4rem; color:#444">
+                            <div style="font-size:.95rem; margin-bottom:.25rem">Eligible</div>
+                            <div style="display:flex; gap:.5rem; flex-wrap:wrap">
+                                <template x-for="(pid, i) in pot.eligiblePlayerIds" :key="pid">
+                                    <div style="background:#f3f4f6; padding:.25rem .5rem; border-radius:6px; font-size:.9rem"> 
+                                        <span x-text="getPlayerLabel(pid)"></span>
+                                        <small style="color:#666; margin-left:.35rem"> <span x-text="getPlayerCardsDisplay(pid)"></span></small>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- Board Evaluation Results -->
+    <template x-if="boardResults && boardResults.length">
+        <div class="card" style="margin-top:.75rem">
+            <strong>Board Results</strong>
+
+            <div class="row" style="margin-top:.5rem; flex-direction:column">
+                <template x-for="(res, idx) in boardResults" :key="idx">
+                    <div class="animate-slide-up" style="padding:.5rem; background:#f3f4f6; border-radius:8px; width:100%">
+                        <div>Board <span x-text="idx + 1"></span></div>
+
+                        <template x-if="res.tiers && res.tiers.length">
+                            <template x-for="(tier, tIdx) in res.tiers" :key="tIdx">
+                                <div class="animate-fade-in" style="margin-left:.5rem; margin-top:.25rem; padding:.5rem; background:#fff; border-radius:6px;">
+                                    <div style="font-weight:600; margin-bottom:.25rem;" x-text="tIdx === 0 ? 'Winners' : (tIdx === 1 ? 'Runners-up' : 'Tier ' + (tIdx + 1))"></div>
+                                    <div>
+                                        <template x-for="(pid, i) in tier" :key="pid">
+                                            <div style="display:flex; justify-content:space-between; gap:.5rem; align-items:center; padding:.15rem 0;">
+                                                <div style="font-weight:500;"><span x-text="getPlayerLabel(pid)"></span></div>
+                                                <div style="color:#555; font-size:.9rem;"><span x-text="res.hands && res.hands[pid] ? res.hands[pid] : ''"></span></div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </template>
+
+                        <template x-if="!res.tiers || !res.tiers.length">
+                            <div>Winners: None</div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- PAYOUTS -->
+    <template x-if="payouts">
+        <div class="card" style="margin-top:.75rem">
+            <strong>Payouts</strong>
+
+            <div class="row" style="margin-top:.5rem; flex-direction:column">
+                <div class="animate-slide-up" style="padding:.5rem; background:#fff; border-radius:8px; width:100%; box-shadow:0 1px 0 rgba(0,0,0,0.03)">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem">
+                        <div><strong>Totals</strong></div>
+                        <div style="color:#666; font-size:.9rem">(per player)</div>
+                    </div>
+                    <template x-for="(amt, id) in payouts.totals" :key="id">
+                        <div class="animate-fade-in" style="display:flex; justify-content:space-between; align-items:center; padding:.25rem 0; border-top:1px solid rgba(0,0,0,0.03)">
+                            <div style="display:flex; gap:.5rem; align-items:center; min-width:0">
+                                <div style="font-weight:600; min-width:0; text-overflow:ellipsis; overflow:hidden; white-space:nowrap"><span x-text="getPlayerLabel(id)"></span></div>
+                                <div style="color:#666; font-size:.9rem"> <span x-text="getPlayerCardsDisplay(id)"></span></div>
+                            </div>
+                            <div style="font-weight:700"> <span x-text="formatAmount(amt)"></span></div>
+                        </div>
+                    </template>
+                </div>
+
+                    <template x-for="(pot, idx) in payouts.perPot" :key="idx">
+                    <div class="animate-slide-up" style="padding:.5rem; background:#fff; border-radius:8px; width:100%; margin-top:.5rem; box-shadow:0 1px 0 rgba(0,0,0,0.03)">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-weight:600">Pot <span x-text="idx + 1"></span></div>
+                            <div style="font-weight:700">Total: <span x-text="formatAmount(pot.amount)"></span></div>
+                        </div>
+                        <div style="margin-top:.4rem">
+                            <template x-for="alloc in pot.allocations" :key="alloc.playerId">
+                                <div class="animate-fade-in" style="display:flex; justify-content:space-between; align-items:center; padding:.25rem 0; border-top:1px solid rgba(0,0,0,0.03)">
+                                    <div style="display:flex; gap:.5rem; align-items:center">
+                                        <div style="font-weight:600"><span x-text="getPlayerLabel(alloc.playerId)"></span></div>
+                                        <div style="color:#666; font-size:.9rem"><span x-text="getPlayerCardsDisplay(alloc.playerId)"></span></div>
+                                    </div>
+                                    <div style="text-align:right">
+                                        <div style="font-weight:700"><span x-text="formatAmount(alloc.amount)"></span></div>
+                                        <div style="color:#666; font-size:.85rem">(<span x-text="alloc.percent"></span>%)</div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- CARD PICKER MODAL -->
+    <div class="modal" x-show="cardPicker.open" @click.self="closeCardPicker()">
+        <div class="modal-content">
+            <h3>Select Card (max <span x-text="cardPicker.max"></span>)</h3>
+
+            <div class="modal-body">
+                <div class="deck-grid">
+                    <template x-for="r in ranks" :key="r">
+                        <template x-for="s in suits" :key="s">
+                            <div x-data="{ card: r + s }"
+                                class="card-btn"
+                                :class="{ disabled: isCardDisabled(card), selected: cardPicker.selected.includes(card) }"
+                                @click="selectCard(card)">
+                                <div class="card-face">
+                                    <span class="rank" :class="getSuitColorClass(card)" x-text="getCardRank(card)"></span>
+                                    <span class="suit" :class="getSuitColorClass(card)" x-html="getSuitSymbol(card)"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="secondary" @click="closeCardPicker()">Cancel</button>
+                <button @click="saveSelection()">Save</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
