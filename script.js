@@ -42,6 +42,7 @@ function pokerInputApp() {
         id: this.nextId++,
         name: '',
         cards: [null, null],
+        folded: false,
         preflop: 0,
         flop: 0,
         turn: 0,
@@ -188,7 +189,8 @@ function pokerInputApp() {
       }
 
       const results = this.boards.map(board => {
-        const eligiblePlayers = this.players.filter(p => p.cards && p.cards[0] && p.cards[1])
+        // exclude folded players from board evaluation
+        const eligiblePlayers = this.players.filter(p => p.cards && p.cards[0] && p.cards[1] && !p.folded)
 
         if (!eligiblePlayers.length) return { tiers: [] }
 
@@ -280,9 +282,16 @@ function pokerInputApp() {
           let allocated = false
           const tiers = board.tiers || []
 
+          // helper to check folded state by player id
+          const isPlayerFolded = (pid) => {
+            const p = this.players.find(x => x.id === Number(pid))
+            return p ? !!p.folded : false
+          }
+
           for (let t = 0; t < tiers.length; t++) {
             const tier = tiers[t] || []
-            const eligibleWinners = tier.filter(w => pot.eligiblePlayerIds.includes(w))
+            // only consider winners that are both in this pot and not folded
+            const eligibleWinners = tier.filter(w => pot.eligiblePlayerIds.includes(Number(w)) && !isPlayerFolded(w))
             if (eligibleWinners.length) {
               const sharePerWinner = boardShare / eligibleWinners.length
               eligibleWinners.forEach(w => {
@@ -296,7 +305,11 @@ function pokerInputApp() {
 
           // fallback: no tier had eligible players -> split among eligible players
           if (!allocated) {
-            const fallback = pot.eligiblePlayerIds.slice()
+            // split among eligible (non-folded) players for this pot
+            const fallback = (pot.eligiblePlayerIds || []).filter(id => {
+              const p = this.players.find(x => x.id === Number(id))
+              return p && !p.folded
+            })
             const sharePerWinner = boardShare / Math.max(1, fallback.length)
             fallback.forEach(w => {
               totals[w] = (totals[w] || 0) + sharePerWinner
@@ -360,6 +373,14 @@ function pokerInputApp() {
       const p = this.players.find(x => x.id === pid)
       if (p && p.name && String(p.name).trim()) return p.name
       return 'Player ' + pid
+    }
+
+    ,
+
+    isPlayerFolded(id) {
+      const pid = Number(id)
+      const p = this.players.find(x => x.id === pid)
+      return p ? !!p.folded : false
     }
   }
 }
